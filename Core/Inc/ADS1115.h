@@ -15,7 +15,7 @@ extern "C" {
 typedef struct{
   uint8_t DR;
   float Rs_R0;
-  float R0_RL;
+  float R0;
 } ADS1115_channel;
 
 typedef struct{
@@ -42,6 +42,7 @@ typedef struct{
 #define ADS1115_A3 0b111
 #define ADS1115_DEBUG 0
 #define ADS1115_ENABLE_ADC 1
+#define ADS1115_RL 10000.0f // in ohm
 
 extern ADS1115_handle my_ADS1115_1;
 extern I2C_HandleTypeDef *ADS1115_hi2c;
@@ -63,7 +64,7 @@ int ADS1115_caculator_normal_probability_distribution(float do_tin_cay, float *r
 int ADS1115_get_mean_and_varadiance(float *mean, float *variance, float *arr, uint16_t length);  
 int ADS1115_get_num_sample_required(uint16_t *number_of_samples, float *arr, uint16_t length, float confidence_level, float error_margin);
 int ADS1115_init(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel); 
-int ADS1115_read_r0_rl(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel);
+int ADS1115_read_r0(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel);
 #ifdef __cplusplus
 }
 #endif

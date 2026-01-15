@@ -40,45 +40,47 @@
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 const uint8_t dummy[SD_DATA_LEN+4] = {0xff};
-const char *error_names[] = {
-     "SPI not respone",                         // 0: unused
-     "Card idle state R1/7",           // 1
-     "Illegal command R1/7",           // 2
-     "Communication CRC error R1/7",   // 3
-     "Erase sequence error R1/7",      // 4
-     "Address error R1/7",             // 5
-     "Parameter error R1/7",            // 6
- 	"check pattern error R7",			//7
- 	"voltage range error R7",			//8
- 	"error in position 9",				//9
- 	"error in position 10",				//10
- 	"error in position 11: card not support this VDD",				//11
- 	"error in position 12",
- 	"Unusable Card",
- 	"error in position 14",
- 	"CARD support: Reserved for Low Voltage Range",	//15
- 	"CARD support VDD: 2.7-2.8",
- 	"CARD support VDD: 2.8-2.9",
- 	"CARD support VDD: 2.9-3.0",
- 	"CARD support VDD: 3.0-3.1",
- 	"CARD support VDD: 3.1-3.2",
- 	"CARD support VDD: 3.2-3.3",
- 	"CARD support VDD: 3.3-3.4",
- 	"CARD support VDD: 3.4-3.5",
- 	"CARD support VDD: 3.5-3.6",						//24
- 	"error in position 25",
- 	"Card power is busy",
- 	"This device is not support CARD MMC", //27
- 	"ERROR READ DATA",									//28
- 	"CC ERROR READ DATA",								//29
- 	"CARD ECC FALILED READ DATA",						//30
- 	"OUT OF RANGE READ DATA",							//31
-	"Data rejected due to a CRC error",					//32
-	"Data Rejected due to a Write Error",				//33
-	"error in position 34"								//34
- };
+#if SD_DEBUG_ON
+	const char *error_names[] = {
+		"SPI not respone",                         // 0: unused
+		"Card idle state R1/7",           // 1
+		"Illegal command R1/7",           // 2
+		"Communication CRC error R1/7",   // 3
+		"Erase sequence error R1/7",      // 4
+		"Address error R1/7",             // 5
+		"Parameter error R1/7",            // 6
+		"check pattern error R7",			//7
+		"voltage range error R7",			//8
+		"error in position 9",				//9
+		"error in position 10",				//10
+		"error in position 11: card not support this VDD",				//11
+		"error in position 12",
+		"Unusable Card",
+		"error in position 14",
+		"CARD support: Reserved for Low Voltage Range",	//15
+		"CARD support VDD: 2.7-2.8",
+		"CARD support VDD: 2.8-2.9",
+		"CARD support VDD: 2.9-3.0",
+		"CARD support VDD: 3.0-3.1",
+		"CARD support VDD: 3.1-3.2",
+		"CARD support VDD: 3.2-3.3",
+		"CARD support VDD: 3.3-3.4",
+		"CARD support VDD: 3.4-3.5",
+		"CARD support VDD: 3.5-3.6",						//24
+		"error in position 25",
+		"Card power is busy",
+		"This device is not support CARD MMC", //27
+		"ERROR READ DATA",									//28
+		"CC ERROR READ DATA",								//29
+		"CARD ECC FALILED READ DATA",						//30
+		"OUT OF RANGE READ DATA",							//31
+		"Data rejected due to a CRC error",					//32
+		"Data Rejected due to a Write Error",				//33
+		"error in position 34"								//34
+	};
+#endif
 /* Private variables ---------------------------------------------------------*/
-
+#if SD_DEBUG_ON
 void SD_print_error_mess(SD_handle *mySD_handle){
     bool has_error = 0;
     for(uint8_t i = 0; i < SD_quantity_mess; i++){
@@ -95,6 +97,7 @@ void SD_print_error_mess(SD_handle *mySD_handle){
         mySD_handle->error_mess[i] = 0;
     printf("\n\n");
 }
+
 
 void SD_push_error_mess(uint8_t error, SD_handle *mySD_handle )
 {
@@ -164,7 +167,7 @@ void SD_check_SD_data_respone_token(const uint8_t *data,SD_handle *mySD_handle){
 	if((mySD_handle->data[0]&0b1110) == 0b1100) SD_push_error_mess(33, mySD_handle);
 }
 
-
+#endif
 
 bool SD_SPI_rx_multi(SD_handle *mySD_handle,uint16_t len)
 {
@@ -416,7 +419,12 @@ bool SD_receive_data(SD_handle *mySD_handle, uint32_t data_len,uint8_t *buff)
 			if(mySD_handle->data[0]!=0b11111100){
 
 
-				if(!(mySD_handle->data[0]&0b1111000)) SD_check_SD_data_token_err(mySD_handle->data,mySD_handle);
+				if(!(mySD_handle->data[0]&0b1111000)){
+					#if SD_DEBUG_ON
+						
+					SD_check_SD_data_token_err(mySD_handle->data,mySD_handle);
+					#endif
+				} 
 				return 0;
 			}
 
@@ -694,8 +702,12 @@ DSTATUS USER_initialize (
 		SD_transmit_dummy();
 
 		if(responeCMD0[0] != 0x01){
+			#if SD_DEBUG_ON
+				SD_push_error_mess(SD_POSITION_9, mySD_handle);
+				SD_push_error_mess(0, mySD_handle);
 			SD_push_error_mess(SD_POSITION_9, mySD_handle);
 			SD_push_error_mess(0, mySD_handle);
+			#endif
 			return STA_NODISK;
 		}
 		uint32_t arg = 0b0001;//voltage supplied (VHS)
@@ -718,14 +730,17 @@ DSTATUS USER_initialize (
 		else
 		{
 			if(responeCMD8[4] != 0xAA){  // cuối cùng là check pattern
-				SD_push_error_mess(SD_POSITION_10, mySD_handle);
-				SD_push_error_mess(13, mySD_handle);
+				#if SD_DEBUG_ON
+					SD_push_error_mess(SD_POSITION_10, mySD_handle);
+					SD_push_error_mess(13, mySD_handle);
+				#endif
 				return STA_NOINIT;
 			}
 			if((responeCMD8[3] & 0x0F) != 0b0001){  // voltage range không đúng
-				SD_push_error_mess(SD_POSITION_11, mySD_handle);
-				SD_push_error_mess(13, mySD_handle);
-
+				#if SD_DEBUG_ON
+					SD_push_error_mess(SD_POSITION_11, mySD_handle);
+					SD_push_error_mess(13, mySD_handle);
+				#endif
 				// send CMD58
 				arg = 0;
 				uint8_t responeCMD58[SD_R3+2]={0xff};
@@ -821,13 +836,13 @@ DSTATUS USER_initialize (
 
 		SD_read_CSD(mySD_handle->data, &mySD_handle->info);
 
-
+		#if SD_DEBUG_ON
 		printf("Dung luong: %lu mb\n", mySD_handle->info.capacity_mb);
 		printf("So block: %lu\n", mySD_handle->info.block_count);
 		printf("Block size: %lu\n", mySD_handle->info.block_size);
 		printf("Baund rate: %lu\n",mySD_handle->info.max_speed_hz);
 		SD_Set_SPI_Speed(SD_BAUND_RATE);
-
+		#endif
 		return 0; // OK
   /* USER CODE END INIT */
 }

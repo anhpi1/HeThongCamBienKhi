@@ -10,7 +10,7 @@ extern "C" {
 #include <stdint.h>
 
 #define RTC_ADDRESS 0b1101000
-
+#define RTC_INIT_ON 0
 typedef struct {
     uint8_t seconds;
     uint8_t minutes;  

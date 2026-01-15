@@ -104,12 +104,7 @@
  bool SD_receive_data(SD_handle *mySD_handle, uint32_t data_len,uint8_t *buff);
  bool SD_SPI_tx_multi(SD_handle *mySD_handle, uint16_t len);
  bool SD_SPI_tx_multi(SD_handle *mySD_handle, uint16_t len);
- void SD_push_error_mess(uint8_t error, SD_handle *mySD_handle );
- void SD_print_error_mess(SD_handle *mySD_handle);
- void SD_Check(SD_handle *mySD_handle);
- void SD_check_R7(const uint8_t *data, SD_handle *mySD_handle);
- void SD_check_R1(uint8_t data, SD_handle *mySD_handle);
- void SD_check_R3(const uint8_t *data, SD_handle *mySD_handle);
+
  void SD_INIT(SD_handle *mySD_handle);
  void SD_READ(SD_handle *mySD_handle,BYTE pdrv,BYTE *buff,DWORD sector,UINT count);
  void SD_check_SD_data_token_err(const uint8_t *data,SD_handle *mySD_handle);
@@ -123,6 +118,15 @@ bool SD_receive_CSD(SD_handle *mySD_handle);
 extern SD_handle *mySD_handle;
 extern SPI_HandleTypeDef hspi1;
 extern Diskio_drvTypeDef  USER_Driver;
+
+#if SD_DEBUG_ON
+  void SD_push_error_mess(uint8_t error, SD_handle *mySD_handle );
+  void SD_print_error_mess(SD_handle *mySD_handle);
+  void SD_Check(SD_handle *mySD_handle);
+  void SD_check_R7(const uint8_t *data, SD_handle *mySD_handle);
+  void SD_check_R1(uint8_t data, SD_handle *mySD_handle);
+  void SD_check_R3(const uint8_t *data, SD_handle *mySD_handle);
+#endif
 
 /* USER CODE END 0 */
 

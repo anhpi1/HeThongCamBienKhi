@@ -20,7 +20,7 @@ static my_struct_data_captrure *p_dht22_capture_handle = NULL;
 
 /* Function Implementation ---------------------------------------------------*/
 
-int my_func_start_get_data_DHT22(my_struct_data_captrure *capture_buf)
+void my_func_start_get_data_DHT22(my_struct_data_captrure *capture_buf)
 {
     HAL_TIM_Base_Start(&MY_TIM_BASE);
     my_func_start_GPIO_Output();
@@ -43,31 +43,34 @@ int my_func_start_get_data_DHT22(my_struct_data_captrure *capture_buf)
     // Decode và lưu kết quả vào biến toàn cục hoặc truyền vào
 
     my_func_decode_DHT22_signal(capture_buf);
-    return 0;
+
 }
-// val >= 0
-// buf: phải có ít nhất 6 bytes
-void float_to_str_xx_xx(float val, char *buf)
+void my_float_to_str_1dp(float val, char *buf)
 {
+    int whole = (int)val;
+    int frac = (int)((val - whole) * 10);
+    if (frac < 0) frac = -frac;
 
-    if(val < 0) val = -val; // đảm bảo luôn dương
+    char *p = buf;
 
-    // làm tròn xuống 2 chữ số thập phân
-    int total = (int)(val * 100 + 0.5f);  // ví dụ 5.37 -> 537
-    int whole = total / 100;              // phần nguyên
-    int frac  = total % 100;              // phần thập phân
+    if (val < 0) {
+        *p++ = '-';
+        whole = -whole;
+    }
 
-    // chỉ lấy 2 chữ số phần nguyên, cắt nếu >99
-    if(whole > 99) whole = 99;
+    // phần nguyên
+    int div = 1;
+    while (whole / div >= 10) div *= 10;
+    while (div > 0) {
+        *p++ = (whole / div) + '0';
+        whole %= div;
+        div /= 10;
+    }
 
-    buf[0] = (whole / 10) + '0';
-    buf[1] = (whole % 10) + '0';
-    buf[2] = '.';
-    buf[3] = (frac / 10) + '0';
-    buf[4] = (frac % 10) + '0';
-    buf[5] = '\0';
+    *p++ = '.';
+    *p++ = frac + '0';
+    *p = '\0';
 }
-
 
 
 void my_func_start_GPIO_Output(void)
@@ -98,8 +101,8 @@ void my_func_deinti_all(void){
 
 void my_func_delay_us(uint16_t us)
 {
-    uint32_t start = __HAL_TIM_GET_COUNTER(&MY_TIM_BASE);
-    while (__HAL_TIM_GET_COUNTER(&MY_TIM_BASE)- start < us);
+    __HAL_TIM_SET_COUNTER(&MY_TIM_BASE, 0);
+    while (__HAL_TIM_GET_COUNTER(&MY_TIM_BASE) < us); // [cite: 19]
 }
 
 void my_func_delay_ms(uint16_t ms)
@@ -139,11 +142,10 @@ void my_func_decode_DHT22_signal(my_struct_data_captrure *data)
         my_func_caculator_frequency(data->capture_buf[i], data->capture_buf[i + 1], &pulse_info);
         uint32_t freq = pulse_info.frequency;
 
-        
+        // In tần số (không lưu)
+        char buf[12];  // uint32 tối đa 10 chữ số + null
+        my_func_uint32_to_str(freq, buf);
 	#if DEBUG_DHT_22
-            // In tần số (không lưu)
-            char buf[12];  // uint32 tối đa 10 chữ số + null
-            my_func_uint32_to_str(freq, buf);
         	printf("%s ", buf);
 		#endif
         if (is_data_ready < 0)

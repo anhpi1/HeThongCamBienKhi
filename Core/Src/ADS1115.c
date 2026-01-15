@@ -26,12 +26,12 @@ int ADS1115_adc_read_once(uint16_t *value)
 }
 #endif
 
-int ADS1115_read_r0_rl(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel){
+int ADS1115_read_r0(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel){
     ADS1115_device *device;
     ADS1115_channel *ch;
     if(ADS1115_decode_device_address(adrrDevice, &device)!=0) return 3;
     if(ADS1115_decode_channel_address(device, channel, &ch)!=0) return 4;
-    if(ch->R0_RL <= 0.0f) return 5; // Kiểm tra R0_RL hợp lệ
+    
 	  my_ADS1115->data[0] = 0b10000000 | (channel << 4);
 	  my_ADS1115->data[1] = 0b00000011 | (0 << 5);
 
@@ -39,14 +39,18 @@ int ADS1115_read_r0_rl(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t c
 
 
 	  my_ADS1115->data[0] = ADS1115_ARR_REG_CONVERSION;
-	  ADS1115_wait(000);
-    if(HAL_I2C_Mem_Read(ADS1115_hi2c, adrrDevice << 1, ADS1115_ARR_REG_CONVERSION, I2C_MEMADD_SIZE_8BIT, my_ADS1115->data, 2, 100)!= HAL_OK) return 2;
+    for(uint8_t i=0;i<10;i++){
+	    ADS1115_wait(000);
+      if(HAL_I2C_Mem_Read(ADS1115_hi2c, adrrDevice << 1, ADS1115_ARR_REG_CONVERSION, I2C_MEMADD_SIZE_8BIT, my_ADS1115->data, 2, 100)!= HAL_OK) return 2;
+    }
 
+    
 	  int16_t value = (my_ADS1115->data[0] << 8) | my_ADS1115->data[1];
     float vout = (float)value * 0.0001875f;
-    ch->R0_RL = (my_ADS1115->vontage_ref - vout) / vout;
-
-
+    ch->R0 =  ADS1115_RL*(my_ADS1115->vontage_ref - vout) / vout;
+    #if ADS1115_DEBUG
+    printf("R0 channel %d = %d ohm,%d,%d\r\n", channel & 0b011, (int)ch->R0,(int)(my_ADS1115->vontage_ref*100),(int)(vout*100));
+    #endif
     return 0;
 }
 
@@ -86,7 +90,7 @@ int ADS1115_getADC(ADS1115_handle *my_ADS1115,uint8_t adrrDevice, uint8_t channe
     ADS1115_channel *ch;
     if(ADS1115_decode_device_address(adrrDevice, &device)!=0) return 3;
     if(ADS1115_decode_channel_address(device, channel, &ch)!=0) return 4;
-    if(ch->R0_RL <= 0.0f) return 5; // Kiểm tra R0_RL hợp lệ
+    if(ch->R0 <= 0.0f) return 5; // Kiểm tra R0 hợp lệ
 	  my_ADS1115->data[0] = 0b10000000 | (channel << 4);
 	  my_ADS1115->data[1] = 0b00000011 | (ch->DR << 5);
 
@@ -94,13 +98,20 @@ int ADS1115_getADC(ADS1115_handle *my_ADS1115,uint8_t adrrDevice, uint8_t channe
 
 
 	  my_ADS1115->data[0] = ADS1115_ARR_REG_CONVERSION;
-	  ADS1115_wait(ch->DR);
-    if(HAL_I2C_Mem_Read(ADS1115_hi2c, adrrDevice << 1, ADS1115_ARR_REG_CONVERSION, I2C_MEMADD_SIZE_8BIT, my_ADS1115->data, 2, 100)!= HAL_OK) return 2;
+    for(uint8_t i=0;i<10;i++)
+	    ADS1115_wait(ch->DR);
+    for(uint8_t i=0;i<10;i++)
+      if(HAL_I2C_Mem_Read(ADS1115_hi2c, adrrDevice << 1, ADS1115_ARR_REG_CONVERSION, I2C_MEMADD_SIZE_8BIT, my_ADS1115->data, 2, 100)!= HAL_OK) return 2;
 
-	  int16_t value = (my_ADS1115->data[0] << 8) | my_ADS1115->data[1];
+
+    int16_t value = (my_ADS1115->data[0] << 8) | my_ADS1115->data[1];
     float vout = (float)value * 0.0001875f;
-    float Rs_RL = (my_ADS1115->vontage_ref - vout) / vout;
-    ch->Rs_R0 = Rs_RL / ch->R0_RL;
+    float Rs =  ADS1115_RL*(my_ADS1115->vontage_ref - vout) / vout;
+    ch->Rs_R0 = Rs / ch->R0;
+    #if ADS1115_DEBUG
+    printf("Channel %d = %d,%d\r\n", channel & 0b011, (int)Rs,(int)ch->R0);
+    #endif
+
 
 	#if ADS1115_DEBUG
 	  	  printf("Data reg %s channel %d = %02X %02X\r\n",(adrrDevice==ADS1115_ADRR_ADS1115_GND)?"GND":"VCC",channel & 0b011, my_ADS1115->data[0], my_ADS1115->data[1]);
@@ -145,7 +156,7 @@ int ADS1115_get_mean_and_varadiance(float *mean, float *variance, float *arr, ui
     }
 
     *mean = u;
-    *variance = s / (length); // Phương sai mẫu (chia cho n-1)
+    *variance = s / (length - 1); // Phương sai mẫu (chia cho n-1)
     return 0;
 }
 
@@ -172,9 +183,6 @@ int ADS1115_get_num_sample_required(uint16_t *number_of_samples, float *arr, uin
 
 
 int ADS1115_init(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel){
-  #if ADS1115_ENABLE_ADC
-    if(HAL_ADCEx_Calibration_Start(ADS1115_hadc) != HAL_OK) return 7;
-  #endif
   uint16_t adc_value;
   ADS1115_device *device;
   ADS1115_channel *ch;
@@ -186,19 +194,21 @@ int ADS1115_init(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel
   #if !ADS1115_ENABLE_ADC
     adc_value = 3970; // Giả sử đọc được 3.0V từ ADC nếu không dùng ADC onboard
   #endif
-  ADS1115_read_r0_rl(my_ADS1115, adrrDevice, channel);
-
   my_ADS1115->vontage_ref = ((adc_value*3.3f / 4095.0f)*5/3.3f); // in mV
 
+  ADS1115_read_r0(my_ADS1115, adrrDevice, channel);
+
+ 
   ch->DR = 0b111;
   float arr[20];
   for(uint8_t i=0; i<20; i++ ){
+      ADS1115_wait(ch->DR);
       if(ADS1115_getADC(my_ADS1115, adrrDevice, channel))return 4;
       arr[i] = ch->Rs_R0;
   }
   uint16_t num_samples;
-  if(ADS1115_get_num_sample_required(&num_samples, arr, 20, 0.95f, 0.0001875f)!=0) return 5;
-  
+  if(ADS1115_get_num_sample_required(&num_samples, arr, 20, 0.95f, 0.001f)!=0) return 5;
+  printf("Number of samples required calc: %u\n", num_samples);
   ch->DR = (num_samples <= 1) ? 0b111 :
             (num_samples <= 2) ? 0b110 :
             (num_samples <= 4) ? 0b101 :
@@ -209,7 +219,7 @@ int ADS1115_init(ADS1115_handle *my_ADS1115, uint8_t adrrDevice, uint8_t channel
             (num_samples <= 108) ? 0b000 : 0b111;
   if (num_samples > 108) return 6; // Quá nhiều mẫu yêu cầu
 
-
+  ADS1115_read_r0(my_ADS1115, adrrDevice, channel);
   #if ADS1115_DEBUG
     printf("vontage_ref: %d.%02d V\n", (int)(my_ADS1115->vontage_ref), (int)((my_ADS1115->vontage_ref - (int)(my_ADS1115->vontage_ref)) * 100));
     printf("Number of samples required for A0 GND: %u\n", num_samples);

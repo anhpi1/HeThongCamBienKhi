@@ -55,6 +55,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 
 #include "stdint.h"
 #include "stdio.h"
+#include <stdbool.h>
 #include "stm32f1xx_hal.h"
 
 typedef uint8_t bool_;
@@ -69,7 +70,7 @@ typedef uint8_t bool_;
 #define MY_TIM_INPUT_CAPTURE_MODE_CLOCK_FREQ   	64000000UL 				// Tần số clock cấp cho Timer đo Input Capture (Hz)
 #define MY_TIM_INPUT_CAPTURE_MODE_CHANNEL      	TIM_CHANNEL_1 			// Kênh Input Capture sử dụng (CH1 / CH2 / CH3 / CH4)
 #define MY_DMA_BUFFER_SIZE              		43 						// Kích thước buffer DMA - tối ưu cho DHT22 (42 cạnh + 1)
-#define MY_DMA_REQUEST_DHT22_SIZE       		43 						// Số lượng cạnh cần đọc từ DMA (DHT22 dùng 42 cạnh)
+#define MY_DMA_REQUEST_DHT22_SIZE       		42 						// Số lượng cạnh cần đọc từ DMA (DHT22 dùng 42 cạnh)
 #define SIGNAL_START_FREQUENCY          		7097 					// Tần số phát hiện tín hiệu START (Hz)
 #define SIGNAL_0_FREQUENCY              		14096 					// Tần số biểu diễn bit 0 (Hz)
 #define SIGNAL_1_FREQUENCY              		8880 					// Tần số biểu diễn bit 1 (Hz)
@@ -96,14 +97,14 @@ my_struct_DHT22_data sensor_data;
 }my_struct_data_captrure;
 
 
-int my_func_start_get_data_DHT22(my_struct_data_captrure *capture_buf);
+void my_func_start_get_data_DHT22(my_struct_data_captrure *capture_buf);
 void my_func_decode_DHT22_signal(my_struct_data_captrure *data);
 void my_func_start_GPIO_Output(void);
 
 
 //hàm phụ chuyển số nguyên sang string
 void my_func_uint32_to_str(uint32_t value, char *str);
-void float_to_str_xx_xx(float val, char *buf);
+void my_float_to_str_1dp(float value, char *buf);
 
 //các hàm tính toán  tần số
 void my_func_caculator_frequency(uint16_t counter_truoc, uint16_t counter_sau, my_struct_pulse_frequency *my_struct_pulse_frequency);//

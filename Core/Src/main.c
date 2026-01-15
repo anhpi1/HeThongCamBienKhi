@@ -66,6 +66,7 @@ DMA_HandleTypeDef hdma_spi1_tx;
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 DMA_HandleTypeDef hdma_tim2_ch1;
 
 UART_HandleTypeDef huart2;
@@ -90,8 +91,13 @@ FATFS fs;
 FIL file;
 UINT bw;
 
-PID_TypeDef TPID;
-double Input, Output, Setpoint;
+PID_TypeDef PIDHeat;
+double InputHeat, OutputHeat, SetpointHeat;
+
+PID_TypeDef PIDAirPump;
+double InputAirPump, OutputAirPump, SetpointAirPump;
+
+uint8_t rx;
 
 /* USER CODE END PV */
 
@@ -106,6 +112,7 @@ static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 void wait_to_start_mq(uint32_t wait_time_s);
 
@@ -213,8 +220,10 @@ int main(void)
   MX_FATFS_Init();
   MX_ADC1_Init();
   MX_TIM1_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-  wait_to_start_mq(5);// đợi 5 phút cho các task khác khởi động xong trước khi mount sd card
+  wait_to_start_mq(1);// đợi 5 phút cho các task khác khởi động xong trước khi mount sd card
+  HAL_ADCEx_Calibration_Start(&hadc1);
 
   fr = f_mount(&fs, "", 0);   // Mount gọi USER_initialize()
   if (fr != FR_OK) {
@@ -253,34 +262,71 @@ int main(void)
   }
   f_sync(&file);
 
-  Setpoint = 40.0;
-  PID(&TPID, &Input, &Output, &Setpoint, 0.72, 0.012, 11.16, _PID_P_ON_E, _PID_CD_DIRECT);
-  PID_SetMode(&TPID, _PID_MODE_AUTOMATIC);
-  PID_SetSampleTime(&TPID, 1000);
-  PID_SetOutputLimits(&TPID, 0, 1);
+  SetpointHeat = 40.0;
+  PID(&PIDHeat, &InputHeat, &OutputHeat, &SetpointHeat, 0.3805, 0.0005, 3.8071, _PID_P_ON_E, _PID_CD_DIRECT);
+  PID_SetMode(&PIDHeat, _PID_MODE_AUTOMATIC);
+  PID_SetSampleTime(&PIDHeat, 2000);
+  PID_SetOutputLimits(&PIDHeat, 0, 1);
+
+  SetpointAirPump = 40.0;
+  PID(&PIDAirPump, &InputAirPump, &OutputAirPump, &SetpointAirPump, 0.72, 0.012, 11.16, _PID_P_ON_E, _PID_CD_DIRECT);
+  PID_SetMode(&PIDAirPump, _PID_MODE_AUTOMATIC);
+  PID_SetSampleTime(&PIDAirPump, 3000);
+  PID_SetOutputLimits(&PIDAirPump, 0, 1);
+
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
-  uint16_t time = 0;
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+  int is_first = 1;
+  uint32_t roottime = 0;
+  uint8_t is_on = 0;
+
+  HAL_UART_Receive_IT(&huart2, &rx, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-//    TASK_data_sensor();
+    TASK_data_sensor();
     float temperature = 0.0;
-    char buf[10];
     if(DS18B20_start_conversion(&temperature)) continue;
-    Input = (double)temperature;
-    PID_Compute(&TPID);
 
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, Output*999*0.5);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+      char buf[10];
+      InputHeat = (double)temperature;
+      PID_Compute(&PIDHeat);
+      __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, (uint32_t)(OutputHeat * 9999));
 
-    float_to_str_2int(temperature, buf);
+      if(rx=='a') {
+        is_on? (is_on = 0): (is_on = 1);
+        rx = 0;
+      }
 
-    //printf("%u,%s\n",time++,buf);
-    printf("Temperature: %s C\r, PID %u\n", buf,(uint16_t)((Output*999)*0.5));
+      if(is_on){
+          __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)49);
+      }
+      else __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)0);
+
+      float_to_str_2int(temperature, buf);
+      printf("PMW %lu, temp %s\r\n", (uint32_t)(OutputHeat * 9999),buf);
+      
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+      // if(is_first){
+      //     is_first = 0;
+      //     if(RTC_read(&rtcTime) != 0) printf("RTC read error\r\n");
+      //     roottime = rtcTime.seconds + rtcTime.minutes*60 + rtcTime.hours*3600;
+      //     continue;
+      // }
+      
+      // if(RTC_read(&rtcTime) != 0) printf("RTC read error\r\n");
+      // char buf[10];
+      // InputHeat = (double)temperature;
+      // __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 9999);
+      // float_to_str_2int(temperature, buf);
+      // uint32_t time = rtcTime.seconds + rtcTime.minutes*60 + rtcTime.hours*3600 - roottime;
+      // printf("%lu,%s\n",time,buf);
    
     DS18B20_delay_s(1);
     /* USER CODE END WHILE */
@@ -328,7 +374,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV2;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -477,7 +523,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 63;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 999;
+  htim1.Init.Period = 49;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -508,14 +554,6 @@ static void MX_TIM1_Init(void)
   sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
   sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
   if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -641,6 +679,65 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 639;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 9999;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
+  HAL_TIM_MspPostInit(&htim4);
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -713,7 +810,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIO_CHECK_SYS_DIE_GPIO_Port, GPIO_CHECK_SYS_DIE_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
@@ -721,12 +818,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SPI1_CS_GPIO_Port, SPI1_CS_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : GPIO_CHECK_SYS_DIE_Pin */
-  GPIO_InitStruct.Pin = GPIO_CHECK_SYS_DIE_Pin;
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIO_CHECK_SYS_DIE_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA1 */
   GPIO_InitStruct.Pin = GPIO_PIN_1;
@@ -756,23 +853,24 @@ void wait_to_start_mq(uint32_t wait_time_s){
     }while (--wait_time_s);
 }
 
-
-
-void HAL_TIM_IC_CaptureCpltCallback(TIM_HandleTypeDef *htim)
+  void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-     if (htim->Instance == TIM2) {
-          if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
-              // xử lý CH1
-              my_variable_capture_buf.is_data_ready = 1;
-              HAL_TIM_IC_Stop_DMA(&htim2, TIM_CHANNEL_1);
-          }
-          else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) {
-              // xử lý CH2
-          }
-          
-     }
+    if (huart->Instance == USART2)
+    {
+        // xử lý dữ liệu rx ở đây
+
+        // nhận tiếp byte tiếp theo
+        HAL_UART_Receive_IT(&huart2, &rx, 1);
+    }
 }
 
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+     if (htim->Instance == TIM2) {
+          my_variable_capture_buf.is_data_ready = 1;
+          HAL_TIM_IC_Stop_DMA(&htim2, TIM_CHANNEL_1);
+     }
+}
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi){
 	if(hspi->Instance == SPI1) {
 		// Dữ liệu TX đã xong
@@ -881,7 +979,7 @@ void TASK_data_sensor(void){
             return;
         }
         f_sync(&file);
-        printf("Done writing.\n");
+        printf("%s",buff);
 
 
     /* Theo dõi stack: Bật configUSE_TRACE_FACILITY=1 và INCLUDE_uxTaskGetStackHighWaterMark=1 trong FreeRTOSConfig.h */
@@ -891,29 +989,9 @@ void TASK_data_sensor(void){
 
   }
 
+
+
 /* USER CODE END 4 */
-
-/**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM4 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
-  * @retval None
-  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  /* USER CODE BEGIN Callback 0 */
-
-  /* USER CODE END Callback 0 */
-  if (htim->Instance == TIM4)
-  {
-    HAL_IncTick();
-  }
-  /* USER CODE BEGIN Callback 1 */
-
-  /* USER CODE END Callback 1 */
-}
 
 /**
   * @brief  This function is executed in case of error occurrence.

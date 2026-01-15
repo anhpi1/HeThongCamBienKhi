@@ -1,5 +1,6 @@
 #include "RTC.h"
 
+#if RTC_INIT_ON
 int RTC_INIT(uint8_t s, uint8_t m, uint8_t h, uint8_t day, uint8_t date, uint8_t month, uint8_t year){
     uint8_t data[1] = {0x00}; // Tắt SQW/OUT
     if(HAL_I2C_Mem_Write(RTC_hi2c, RTC_ADDRESS<<1, 0x07, I2C_MEMADD_SIZE_8BIT, data, 1, 100)!= HAL_OK) return 1; 
@@ -24,11 +25,10 @@ int RTC_INIT(uint8_t s, uint8_t m, uint8_t h, uint8_t day, uint8_t date, uint8_t
 
     uint8_t year_bcd = ((year / 10) << 4) | (year % 10);
     if(HAL_I2C_Mem_Write(RTC_hi2c, RTC_ADDRESS<<1, 0x06, I2C_MEMADD_SIZE_8BIT, &year_bcd, 1, 100)!= HAL_OK) return 8;
-
-    printf("RTC Initialized\r\n");
+    
     return 0;
 }
-
+#endif
 
 int RTC_read(RTC_TimeTypeDef *rtcTime)
 {
